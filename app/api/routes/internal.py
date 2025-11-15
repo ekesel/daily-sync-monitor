@@ -1,5 +1,5 @@
 # app/api/routes/internal.py
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 
 from fastapi import APIRouter, Depends, Query
 from http import HTTPStatus
@@ -9,6 +9,8 @@ from app.api.dependencies.internal_auth import verify_internal_api_key
 from app.db.session import get_db
 from app.schemas.daily_standup_log import DailyCheckSummary
 from app.services.daily_check import run_daily_standup_check
+from app.services.weekly_summary import compute_weekly_summary
+from app.schemas.weekly_report import WeeklySummary
 
 router = APIRouter(
     prefix="/internal",
@@ -83,4 +85,48 @@ async def trigger_daily_check(
         standup_date = date_type.today()
 
     summary = await run_daily_standup_check(db=db, standup_date=standup_date)
+    return summary
+
+@router.post(
+    "/run-weekly-report",
+    response_model=WeeklySummary,
+    status_code=HTTPStatus.OK,
+    summary="Generate weekly standup summary for the last 7 days",
+    description=(
+        "Internal-only endpoint intended for scheduled/cron usage.\n\n"
+        "**Logic:**\n"
+        "- `end_date` = today's date (server time)\n"
+        "- `start_date` = `end_date` minus 6 days (i.e., last 7 calendar days)\n\n"
+        "Returns the same structure as `/reports/weekly`, but computes the "
+        "date range automatically."
+    ),
+    responses={
+        200: {
+            "description": "Weekly summary computed for the last 7 days.",
+        },
+        401: {
+            "description": "Missing or invalid internal API key (if configured).",
+        },
+    },
+)
+async def run_weekly_report(
+    db: AsyncSession = Depends(get_db),
+) -> WeeklySummary:
+    """
+    Generate a weekly summary for the last 7 days.
+
+    This is designed to be called by a scheduler (cron, CI/CD, etc.) without
+    needing to pass dates explicitly.
+
+    - `end_date` is taken as today's date (server-local).
+    - `start_date` is `end_date - 6 days`.
+    """
+    end_date = date_type.today()
+    start_date = end_date - timedelta(days=6)
+
+    summary = await compute_weekly_summary(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+    )
     return summary

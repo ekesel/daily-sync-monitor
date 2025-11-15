@@ -1,7 +1,7 @@
 # app/main.py
 from fastapi import FastAPI
 
-from app.api.routes import health, projects, internal
+from app.api.routes import health, projects, internal, reports
 from app.core.config import get_settings
 from app.db.session import init_db
 
@@ -26,6 +26,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(projects.router)
     app.include_router(internal.router)
+    app.include_router(reports.router)
 
     @app.on_event("startup")
     async def on_startup() -> None:  # pragma: no cover

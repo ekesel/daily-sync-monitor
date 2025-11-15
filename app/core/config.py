@@ -55,3 +55,12 @@ def get_settings() -> Settings:
     while still being easily importable across the app.
     """
     return Settings()
+
+GRAPH_ORGANIZER_USER_ID: str | None = Field(
+        default=None,
+        description=(
+            "Default organizer user ID/email whose calendar will be queried "
+            "for standup events when resolving meeting occurrences. "
+            "This can later be moved to per-project configuration if needed."
+        ),
+    )
