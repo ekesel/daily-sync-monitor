@@ -1,10 +1,10 @@
 # tests/test_weekly_summary_service.py
-from datetime import date
+from datetime import date, datetime, timedelta, time
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
-from app.db.session import AsyncSessionLocal, init_db
+from app.db.session import AsyncSessionLocal
 from app.models.project import Project
 from app.models.daily_standup_log import DailyStandupLog
 from app.schemas.daily_standup_log import DailyStandupStatus
@@ -17,22 +17,32 @@ async def test_compute_weekly_summary_grouping_and_compliance():
     Verify that compute_weekly_summary correctly groups logs by project,
     counts statuses, and computes compliance percentage.
     """
-    await init_db()
 
     async with AsyncSessionLocal() as session:
+
+        await session.execute(
+            delete(Project).where(Project.project_key == "OCS")
+        )
+        await session.commit()
+
+        await session.execute(
+            delete(Project).where(Project.project_key == "VOICE_AI")
+        )
+        await session.commit()
+
         # Create two projects
         p1 = Project(
             name="OCS Platform",
             project_key="OCS",
             meeting_id="m-ocs",
-            standup_time="10:30:00",
+            standup_time=time(10, 30),
             is_active=True,
         )
         p2 = Project(
             name="Voice AI",
             project_key="VOICE_AI",
             meeting_id="m-voice",
-            standup_time="11:00:00",
+            standup_time=time(11, 0),
             is_active=True,
         )
         session.add_all([p1, p2])
@@ -61,7 +71,7 @@ async def test_compute_weekly_summary_grouping_and_compliance():
                 DailyStandupLog(
                     project_id=p1.id,
                     standup_date=base.replace(day=base.day + idx),
-                    scheduled_time="10:30:00",
+                    scheduled_time=time(10, 30),
                     status=st.value,
                     attendance_count=0,
                     duration_minutes=0.0,
@@ -73,7 +83,7 @@ async def test_compute_weekly_summary_grouping_and_compliance():
             DailyStandupLog(
                 project_id=p2.id,
                 standup_date=base,
-                scheduled_time="11:00:00",
+                scheduled_time=time(11, 0),
                 status=DailyStandupStatus.HAPPENED.value,
                 attendance_count=0,
                 duration_minutes=0.0,
@@ -83,7 +93,7 @@ async def test_compute_weekly_summary_grouping_and_compliance():
             DailyStandupLog(
                 project_id=p2.id,
                 standup_date=base.replace(day=base.day + 1),
-                scheduled_time="11:00:00",
+                scheduled_time=time(11, 0),
                 status=DailyStandupStatus.MISSED.value,
                 attendance_count=0,
                 duration_minutes=0.0,
@@ -133,7 +143,6 @@ async def test_compute_weekly_summary_empty_range():
     When there are no logs in the given range, the summary should contain
     an empty projects list.
     """
-    await init_db()
 
     async with AsyncSessionLocal() as session:
         start = date(2025, 1, 1)
@@ -151,7 +160,6 @@ async def test_compute_weekly_summary_invalid_dates():
     """
     If end_date < start_date, a ValueError should be raised.
     """
-    await init_db()
 
     async with AsyncSessionLocal() as session:
         with pytest.raises(ValueError):

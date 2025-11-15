@@ -3,7 +3,7 @@ from fastapi import FastAPI
 
 from app.api.routes import health, projects, internal, reports
 from app.core.config import get_settings
-from app.db.session import init_db
+from app.db.session import init_db_for_startup
 
 
 def create_app() -> FastAPI:
@@ -30,7 +30,7 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def on_startup() -> None:  # pragma: no cover
-        await init_db()
+        await init_db_for_startup()
 
     return app
 

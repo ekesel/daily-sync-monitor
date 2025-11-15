@@ -1,6 +1,7 @@
 # app/core/config.py
 from functools import lru_cache
-from pydantic import BaseSettings, AnyHttpUrl, Field
+from pydantic import AnyHttpUrl, Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -24,6 +25,15 @@ class Settings(BaseSettings):
     GRAPH_CLIENT_ID: str | None = None
     GRAPH_CLIENT_SECRET: str | None = None
     GRAPH_BASE_URL: AnyHttpUrl | None = None
+
+    GRAPH_ORGANIZER_USER_ID: str | None = Field(
+        default=None,
+        description=(
+            "Default organizer user ID/email whose calendar will be queried "
+            "for standup events when resolving meeting occurrences. "
+            "This can later be moved to per-project configuration if needed."
+        ),
+    )
 
     DB_URL: str = Field(
         "sqlite+aiosqlite:///./daily_sync.db",

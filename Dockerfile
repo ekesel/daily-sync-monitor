@@ -5,7 +5,8 @@ FROM python:3.11-slim AS builder
 
 # Prevent Python from writing .pyc files, force stdout/stderr unbuffered
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
 
 WORKDIR /app
 
@@ -34,6 +35,8 @@ COPY --from=builder /install /usr/local
 
 # Copy application code
 COPY app ./app
+COPY tests ./tests
+
 
 # Default environment (override in real envs)
 # APP_ENV=local for dev, APP_ENV=prod in production
@@ -48,4 +51,4 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 # Run FastAPI app with Uvicorn
 # If your main app object is `app` in app/main.py, this is correct: "app.main:app"
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

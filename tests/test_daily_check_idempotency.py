@@ -3,11 +3,12 @@ from datetime import date
 
 import pytest
 from sqlalchemy import select
-
-from app.db.session import AsyncSessionLocal, init_db
+from datetime import time
+from app.db.session import AsyncSessionLocal
 from app.models.project import Project
 from app.models.daily_standup_log import DailyStandupLog
 from app.services.daily_check import run_daily_standup_check
+from sqlalchemy import delete
 
 
 @pytest.mark.asyncio
@@ -17,15 +18,20 @@ async def test_run_daily_check_is_idempotent_per_project_date():
     should not create duplicate DailyStandupLog rows. Instead, the existing row
     must be updated in-place.
     """
-    await init_db()
 
     async with AsyncSessionLocal() as session:
+
+        await session.execute(
+            delete(Project).where(Project.project_key == "IDEMP_TEST")
+        )
+        await session.commit()
+
         # 1) Create a single active project
         project = Project(
             name="Idempotency Test Project",
             project_key="IDEMP_TEST",
             meeting_id="meeting-idempotent-123",
-            standup_time="10:30:00",
+            standup_time=time(10, 30),
             is_active=True,
         )
         session.add(project)
@@ -36,37 +42,37 @@ async def test_run_daily_check_is_idempotent_per_project_date():
 
         # 2) First run: should create exactly one log row
         summary1 = await run_daily_standup_check(session, standup_date=target_date)
-        assert summary1.total_projects_evaluated == 1
-        assert summary1.logs_created == 1
+        assert summary1.total_projects_evaluated >= 1  # other active projects may exist
 
-        res1 = await session.execute(
+        # Check DB: exactly one log for (this project, this date)
+        result1 = await session.execute(
             select(DailyStandupLog).where(
                 DailyStandupLog.project_id == project.id,
                 DailyStandupLog.standup_date == target_date,
             )
         )
-        logs_after_first = res1.scalars().all()
-        assert len(logs_after_first) == 1
+        logs1 = result1.scalars().all()
+        assert len(logs1) == 1
+        first_log = logs1[0]
 
-        # Capture first status for comparison later
-        first_status = logs_after_first[0].status
-
-        # 3) Second run for the same date: should UPDATE the same row,
-        # not create a new one.
+        # 3) Second run: must NOT create a second row for the same project/date
         summary2 = await run_daily_standup_check(session, standup_date=target_date)
-        assert summary2.total_projects_evaluated == 1
-        assert summary2.logs_created == 1  # one log processed (created or updated)
+        assert summary2.total_projects_evaluated >= 1
 
-        res2 = await session.execute(
+        result2 = await session.execute(
             select(DailyStandupLog).where(
                 DailyStandupLog.project_id == project.id,
                 DailyStandupLog.standup_date == target_date,
             )
         )
-        logs_after_second = res2.scalars().all()
-        assert len(logs_after_second) == 1
+        logs2 = result2.scalars().all()
+        assert len(logs2) == 1  # still only one row
+
+        # Ensure it's the same row (updated in-place if anything changed)
+        second_log = logs2[0]
+        assert second_log.id == first_log.id
 
         # Status may remain the same (e.g. NO_DATA), but the key requirement
         # is that no duplicate rows were created.
-        second_status = logs_after_second[0].status
-        assert second_status == first_status
+        second_status = second_log.status
+        assert second_status == first_log.status

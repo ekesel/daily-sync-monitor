@@ -6,7 +6,7 @@ import pytest
 
 from sqlalchemy import select
 
-from app.db.session import AsyncSessionLocal, init_db
+from app.db.session import AsyncSessionLocal
 from app.models.project import Project
 from app.models.daily_standup_log import DailyStandupLog
 from app.schemas.daily_standup_log import DailyStandupStatus
@@ -41,7 +41,6 @@ async def test_project_summary_with_logs(client):
     """
     Verify that /projects/{id}/summary correctly aggregates counts and compliance.
     """
-    await init_db()
 
     project_id = _create_project_via_api(client, key="SUMM_BASIC")
 
@@ -99,7 +98,6 @@ async def test_project_summary_no_logs_returns_zeroes(client):
     If a project exists but has no logs in the range, the summary should
     return total_days = 0 and all counts = 0, not 404.
     """
-    await init_db()
 
     project_id = _create_project_via_api(client, key="SUMM_NO_LOGS")
 

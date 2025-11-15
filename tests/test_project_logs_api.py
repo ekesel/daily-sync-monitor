@@ -6,7 +6,7 @@ import pytest
 
 from sqlalchemy import select
 
-from app.db.session import AsyncSessionLocal, init_db
+from app.db.session import AsyncSessionLocal
 from app.models.daily_standup_log import DailyStandupLog
 from app.models.project import Project
 from app.schemas.daily_standup_log import DailyStandupStatus
@@ -42,7 +42,6 @@ async def test_list_project_logs_basic(client):
     Ensure /projects/{id}/logs returns all logs for a project when no
     from_date/to_date filters are provided.
     """
-    await init_db()
 
     # Create project via API
     project_id = _create_project_via_api(client, key="LOGS_BASIC")
@@ -91,7 +90,6 @@ async def test_list_project_logs_with_date_filters(client):
     """
     Ensure from_date/to_date filters are applied correctly to the logs list.
     """
-    await init_db()
 
     project_id = _create_project_via_api(client, key="LOGS_FILTER")
 

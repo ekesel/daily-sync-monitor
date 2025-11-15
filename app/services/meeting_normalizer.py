@@ -40,7 +40,9 @@ class MeetingNormalizer:
         if occurrence is not None:
             cancelled = bool(occurrence.is_cancelled)
             if occurrence.raw is not None:
-                raw["occurrence"] = occurrence.raw
+              raw["occurrence"] = occurrence.raw
+            if attendance and attendance.raw is not None:
+              raw["attendance"] = attendance.raw
 
         non_org_count = 0
         duration_minutes = 0.0
