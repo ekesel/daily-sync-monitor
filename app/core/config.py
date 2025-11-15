@@ -37,7 +37,33 @@ class Settings(BaseSettings):
 
     REPORT_EMAIL_RECIPIENTS: str | None = Field(
         default=None,
-        description="Comma-separated list of email IDs for weekly report",
+        description="Comma-separated list of email addresses for weekly reports.",
+    )
+
+    # --- SMTP / Email configuration ---
+    SMTP_HOST: str | None = Field(
+        default=None,
+        description="SMTP server hostname for sending emails.",
+    )
+    SMTP_PORT: int = Field(
+        default=587,
+        description="SMTP server port (usually 587 for TLS).",
+    )
+    SMTP_USERNAME: str | None = Field(
+        default=None,
+        description="SMTP username (if authentication is required).",
+    )
+    SMTP_PASSWORD: str | None = Field(
+        default=None,
+        description="SMTP password (if authentication is required).",
+    )
+    SMTP_USE_TLS: bool = Field(
+        default=True,
+        description="Whether to use STARTTLS when connecting to SMTP.",
+    )
+    SMTP_FROM_ADDRESS: str | None = Field(
+        default=None,
+        description="From address used in weekly report emails.",
     )
 
     class Config:

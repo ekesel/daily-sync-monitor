@@ -1,53 +1,102 @@
-# app/models/project.py
-from datetime import time
+# app/schemas/project.py
 
-from sqlalchemy import Boolean, Column, Integer, String, Time, UniqueConstraint
+from __future__ import annotations
 
-from app.db.base import Base
+from datetime import time, datetime
+from pydantic import BaseModel, Field, validator
 
 
-class Project(Base):
+# --------------------------------------------------------------------------
+# Base schema shared by create/update/read
+# --------------------------------------------------------------------------
+
+class ProjectBase(BaseModel):
     """
-    Represents a single project being monitored by the DailySync Monitor service.
-
-    Each project is linked to exactly one recurring daily standup meeting
-    in Microsoft Graph, identified via `meeting_id`.
+    Shared fields used by ProjectCreate and ProjectUpdate.
     """
+    name: str = Field(
+        ...,
+        description="Human-readable project name.",
+        example="OCS Platform",
+    )
 
-    __tablename__ = "projects"
+    project_key: str = Field(
+        ...,
+        description="Short unique key for the project (used in reports and URLs).",
+        example="OCS",
+    )
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
-    project_key = Column(
-        String(100),
-        nullable=False,
-        unique=True,
-        index=True,
-        doc="Short identifier used in logs/reports, e.g. 'OCS', 'TATVA'.",
+    meeting_id: str = Field(
+        ...,
+        description="Microsoft Graph Meeting ID for this project's daily standup.",
+        example="meeting-12345@tenant.onmicrosoft.com",
     )
-    meeting_id = Column(
-        String(512),
-        nullable=False,
-        doc="Graph meeting ID or join URL used to look up the recurring event.",
+
+    standup_time: time = Field(
+        ...,
+        description="Scheduled daily standup time (HH:MM:SS).",
+        example="10:30:00",
     )
-    standup_time = Column(
-        Time,
-        nullable=False,
-        doc="Configured local time of day when the daily standup normally occurs.",
-    )
-    is_active = Column(
-        Boolean,
-        nullable=False,
+
+    is_active: bool = Field(
         default=True,
-        doc="If False, the project is ignored during daily compliance checks.",
+        description="Whether the project is active and included in standup checks.",
     )
 
-    __table_args__ = (
-        UniqueConstraint(
-            "project_key",
-            name="uq_projects_project_key",
-        ),
+
+# --------------------------------------------------------------------------
+# Create schema (POST /projects)
+# --------------------------------------------------------------------------
+
+class ProjectCreate(ProjectBase):
+    """
+    Schema for creating a new project.
+    All fields except is_active must be provided by the client.
+    """
+    pass
+
+
+# --------------------------------------------------------------------------
+# Update schema (PATCH /projects/{id})
+# --------------------------------------------------------------------------
+
+class ProjectUpdate(BaseModel):
+    """
+    Schema for updating a project.
+    All fields are optional; only provided fields are updated.
+    """
+    name: str | None = Field(default=None)
+    project_key: str | None = Field(default=None)
+    meeting_id: str | None = Field(default=None)
+    standup_time: time | None = Field(default=None)
+    is_active: bool | None = Field(default=None)
+
+
+# --------------------------------------------------------------------------
+# Read schema (GET /projects, GET /projects/{id})
+# --------------------------------------------------------------------------
+
+class ProjectRead(ProjectBase):
+    """
+    Response schema for reading a project.
+    Includes the DB-generated fields.
+    """
+
+    id: int = Field(
+        ...,
+        description="Auto-incremented project ID.",
+        example=12,
     )
 
-    def __repr__(self) -> str:
-        return f"<Project id={self.id} key={self.project_key} name={self.name}>"
+    created_at: datetime | None = Field(
+        None,
+        description="Timestamp when the project record was created (if available).",
+    )
+
+    updated_at: datetime | None = Field(
+        None,
+        description="Timestamp when the project record was last updated (if available).",
+    )
+
+    class Config:
+        orm_mode = True

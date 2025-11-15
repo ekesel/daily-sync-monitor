@@ -11,6 +11,7 @@ from app.schemas.daily_standup_log import DailyCheckSummary
 from app.services.daily_check import run_daily_standup_check
 from app.services.weekly_summary import compute_weekly_summary
 from app.schemas.weekly_report import WeeklySummary
+from app.services.email_notifier import send_weekly_summary_email
 
 router = APIRouter(
     prefix="/internal",
@@ -129,4 +130,12 @@ async def run_weekly_report(
         start_date=start_date,
         end_date=end_date,
     )
+
+    # Fire-and-forget email; do not fail the API if email fails.
+    try:
+        send_weekly_summary_email(summary)
+    except Exception:
+        # Extra safety, though send_weekly_summary_email already swallows exceptions.
+        pass
+    
     return summary

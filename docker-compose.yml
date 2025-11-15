@@ -1,0 +1,41 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: dailysync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dailysync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dailysync}
+      POSTGRES_DB: ${POSTGRES_DB:-dailysync}
+    ports:
+      - "5432:5432"
+    volumes:
+      - dailysync_db_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dailysync-monitor:latest
+    container_name: dailysync-api
+    restart: unless-stopped
+    depends_on:
+      - db
+    env_file:
+      - .env 
+    environment:
+      # fallback values if not present in .env
+      APP_ENV: ${APP_ENV:-local}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://dailysync:dailysync@db:5432/dailysync}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  dailysync_db_data:

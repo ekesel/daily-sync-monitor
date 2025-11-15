@@ -1,13 +1,17 @@
 # app/api/routes/projects.py
 from http import HTTPStatus
-
+from datetime import date as date_type
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from operator import and_
 from app.db.session import get_db
 from app.models.project import Project
+from app.models.daily_standup_log import DailyStandupLog
 from app.schemas.project import ProjectCreate, ProjectRead, ProjectUpdate
+from app.schemas.daily_standup_log import DailyStandupLogRead
+from app.schemas.weekly_report import WeeklyProjectSummary
+from app.services.weekly_summary import compute_project_summary
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -268,3 +272,137 @@ async def update_project(
     await db.refresh(project)
 
     return ProjectRead.model_validate(project)
+
+
+@router.get(
+    "/{project_id}/logs",
+    response_model=list[DailyStandupLogRead],
+    status_code=HTTPStatus.OK,
+    summary="List standup logs for a project",
+    description=(
+        "Return the day-wise standup logs for a given project, optionally filtered "
+        "by a date range.\n\n"
+        "Use this endpoint to debug why a project shows low compliance by "
+        "inspecting daily statuses (HAPPENED, MISSED, CANCELLED, NO_DATA, ERROR) "
+        "and associated metrics like attendance count and duration.\n\n"
+        "- If `from_date` and `to_date` are both omitted, all logs for the project "
+        "  are returned.\n"
+        "- If only `from_date` is provided, logs from that date onwards are returned.\n"
+        "- If only `to_date` is provided, logs up to that date are returned."
+    ),
+)
+async def list_project_logs(
+    project_id: int = Path(
+        ...,
+        description="Numeric ID of the project whose logs should be listed.",
+        example=1,
+    ),
+    from_date: date_type | None = Query(
+        default=None,
+        description=(
+            "Start date (inclusive) of the log window in ISO format (YYYY-MM-DD). "
+            "If omitted, no lower bound is applied."
+        ),
+        example="2025-11-10",
+    ),
+    to_date: date_type | None = Query(
+        default=None,
+        description=(
+            "End date (inclusive) of the log window in ISO format (YYYY-MM-DD). "
+            "If omitted, no upper bound is applied."
+        ),
+        example="2025-11-16",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> list[DailyStandupLogRead]:
+    """
+    List DailyStandupLog entries for a specific project with optional date filtering.
+    """
+    # Ensure project exists
+    project_stmt = select(Project).where(Project.id == project_id)
+    project_result = await db.execute(project_stmt)
+    project = project_result.scalar_one_or_none()
+    if project is None:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"Project with id={project_id} not found.",
+        )
+
+    # Build base query for logs
+    conditions = [DailyStandupLog.project_id == project_id]
+
+    if from_date is not None:
+        conditions.append(DailyStandupLog.standup_date >= from_date)
+    if to_date is not None:
+        conditions.append(DailyStandupLog.standup_date <= to_date)
+
+    logs_stmt = (
+        select(DailyStandupLog)
+        .where(and_(*conditions))
+        .order_by(DailyStandupLog.standup_date.asc())
+    )
+
+    logs_result = await db.execute(logs_stmt)
+    logs = list(logs_result.scalars().all())
+
+    return [DailyStandupLogRead.model_validate(log) for log in logs]
+
+@router.get(
+    "/{project_id}/summary",
+    response_model=WeeklyProjectSummary,
+    status_code=HTTPStatus.OK,
+    summary="Get aggregate standup summary for a project",
+    description=(
+        "Return an aggregate standup summary for a single project over a given "
+        "date range.\n\n"
+        "This is essentially the single-project version of `/reports/weekly`, "
+        "and is useful for dashboards and tooling.\n\n"
+        "The summary includes:\n"
+        "- Total days with logs in the range\n"
+        "- Count of HAPPENED / MISSED / CANCELLED / NO_DATA / ERROR\n"
+        "- Compliance percentage (HAPPENED / total_days * 100)\n\n"
+        "If the project exists but no logs are present in the range, a summary "
+        "with `total_days = 0` and all counts = 0 will be returned."
+    ),
+)
+async def get_project_summary(
+    project_id: int = Path(
+        ...,
+        description="Numeric ID of the project.",
+        example=1,
+    ),
+    from_date: date_type = Query(
+        ...,
+        description="Start date (inclusive) in ISO format (YYYY-MM-DD).",
+        example="2025-11-10",
+    ),
+    to_date: date_type = Query(
+        ...,
+        description="End date (inclusive) in ISO format (YYYY-MM-DD).",
+        example="2025-11-16",
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> WeeklyProjectSummary:
+    """
+    Aggregate view per project for dashboards/tools.
+    """
+    try:
+        summary = await compute_project_summary(
+            db=db,
+            project_id=project_id,
+            start_date=from_date,
+            end_date=to_date,
+        )
+    except LookupError:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail=f"Project with id={project_id} not found.",
+        )
+    except ValueError as exc:
+        # e.g., end_date < from_date
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    return summary

@@ -133,3 +133,87 @@ async def compute_weekly_summary(
         end_date=end_date,
         projects=summaries,
     )
+
+async def compute_project_summary(
+    db: AsyncSession,
+    project_id: int,
+    start_date: date_type,
+    end_date: date_type,
+) -> WeeklyProjectSummary:
+    """
+    Compute an aggregate standup summary for a single project over a date range.
+
+    This is essentially a single-project variant of `compute_weekly_summary`.
+    If the project exists but has no logs in the given range, a summary with
+    total_days = 0 and all counts = 0 will be returned.
+    """
+    if end_date < start_date:
+        raise ValueError("end_date must be greater than or equal to start_date")
+
+    # Ensure the project exists
+    proj_stmt = select(Project).where(Project.id == project_id)
+    proj_res = await db.execute(proj_stmt)
+    project = proj_res.scalar_one_or_none()
+    if project is None:
+        raise LookupError(f"Project with id={project_id} not found")
+
+    # Fetch logs for this project in the date range
+    logs_stmt = (
+        select(DailyStandupLog)
+        .where(
+            and_(
+                DailyStandupLog.project_id == project_id,
+                DailyStandupLog.standup_date >= start_date,
+                DailyStandupLog.standup_date <= end_date,
+            )
+        )
+        .order_by(DailyStandupLog.standup_date)
+    )
+
+    logs_res = await db.execute(logs_stmt)
+    logs: List[DailyStandupLog] = list(logs_res.scalars().all())
+
+    total_days = len(logs)
+
+    counts = {
+        DailyStandupStatus.HAPPENED: 0,
+        DailyStandupStatus.MISSED: 0,
+        DailyStandupStatus.CANCELLED: 0,
+        DailyStandupStatus.NO_DATA: 0,
+        DailyStandupStatus.ERROR: 0,
+    }
+
+    for log in logs:
+        try:
+            status_enum = DailyStandupStatus(log.status)
+        except ValueError:
+            status_enum = DailyStandupStatus.NO_DATA
+
+        if status_enum in counts:
+            counts[status_enum] += 1
+
+    happened = counts[DailyStandupStatus.HAPPENED]
+    missed = counts[DailyStandupStatus.MISSED]
+    cancelled = counts[DailyStandupStatus.CANCELLED]
+    no_data = counts[DailyStandupStatus.NO_DATA]
+    error = counts[DailyStandupStatus.ERROR]
+
+    if total_days > 0:
+        compliance_pct = (happened / float(total_days)) * 100.0
+    else:
+        compliance_pct = 0.0
+
+    return WeeklyProjectSummary(
+        project_id=project.id,
+        project_key=project.project_key,
+        project_name=project.name,
+        start_date=start_date,
+        end_date=end_date,
+        total_days=total_days,
+        happened_count=happened,
+        missed_count=missed,
+        cancelled_count=cancelled,
+        no_data_count=no_data,
+        error_count=error,
+        compliance_pct=round(compliance_pct, 2),
+    )
